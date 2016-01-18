@@ -2,7 +2,7 @@
  * Gmail Tickler, a Google Apps script
  * written by Mike Rosulek, rosulekm@eecs.oregonstate.edu
  *
- * Revision: 17 Jan 2016
+ * Revision: 18 Jan 2016
  *
  * Made available under the MIT license. See the license and instructions at:
  *
@@ -20,12 +20,14 @@ var MARK_UNREAD    = true;               // mark unread when restoring a message
 var EMAIL_ERRORS   = true;               // report error message as email reply within thread
 
 var CLEANUP_LABELS = true;               // remove empty tickler-command labels
-var EXEMPT_LABELS  =                     // labels to have around even if empty
+var PROTECTED_LABELS  =                  // keep these labels around even if empty
     [ "tomorrow", "sun", "mon", "tue",
       "wed", "thu", "fri", "sat",
       "1wk", "2wks"
     ].map( function(x){ return TICKLER_LABEL + "/" + x });
-
+var PROTECTED_DAYS_COUNT = 8;            // keep labels around for this many days in the future
+var PROTECTED_DAYS_TIMESTAMPS =          // keep labels around for these times on each day
+      [ "7am", "9pm" ];
 
 var DEFAULT_TIME   = [8, 0, 0, 0];       // for dates that don't specify a time-of-day,
                                          // use the following, as [hr,min,sec,milli];
@@ -38,7 +40,7 @@ var FUDGE_FACTOR   = 15;                 // a thread will be restored to the inb
 var DRY_RUN        = false;              // set to true to make no changes (log only)
 
 /*
- * 2. RUN THIS ONCE, first, to create necessary labels
+ * 2. SET A TRIGGER for this function to run once daily:
  */
 function setup() {
     GmailApp.createLabel(TICKLER_LABEL);
@@ -47,9 +49,12 @@ function setup() {
     if (ERROR_LABEL)
         GmailApp.createLabel(ERROR_LABEL);
 
-    for (var i=0; i<EXEMPT_LABELS.length; i++) {
-        GmailApp.createLabel(EXEMPT_LABELS[i]);
+    var protected_labels = constructProtectedLabels();
+    for (var i=0; i<protected_labels.length; i++) {
+        GmailApp.createLabel(protected_labels[i]);
     }
+
+    if (CLEANUP_LABELS) cleanupLabels();
 }
 
 /*
@@ -165,9 +170,9 @@ function ticklerInfo(t) {
     return result;
 }
 
-
-var DOW    = { sun:0, mon:1, tue:2, wed:3, thu:4, fri:5, sat:6 };
-var MONTHS = { jan:0, feb:1, mar:2, apr:3, may:4, jun:5, jul:6, aug:7, sep:8, oct:9, nov:10, dec:11 };
+var DAYS_OF_WEEK = { sun:0, mon:1, tue:2, wed:3, thu:4, fri:5, sat:6 };
+var MONTH_NUMBERS = { jan:0, feb:1, mar:2, apr:3, may:4, jun:5, jul:6, aug:7, sep:8, oct:9, nov:10, dec:11 };
+var MONTH_NAMES = [ "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec" ];
 
 function parseDate(s, baseline) {
     var matches;
@@ -228,7 +233,7 @@ function parseDate(s, baseline) {
             } else if (matches[1].toLowerCase() == "today") {
                 // do nothing
             } else {
-                var dow = DOW[ matches[3].substr(0,3).toLowerCase() ];
+                var dow = DAYS_OF_WEEK[ matches[3].substr(0,3).toLowerCase() ];
                 var offset = (dow + 7 - baseline.getDay()) % 7;
                 var next = !! matches[2];
                 if (dow >= baseline.getDay() && next)
@@ -243,7 +248,7 @@ function parseDate(s, baseline) {
 
         matches = s.match(/^(?:on\s*)?(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s*(\d+)/i);
         if (matches) {
-            var mon = MONTHS[ matches[1].substr(0,3).toLowerCase() ];
+            var mon = MONTH_NUMBERS[ matches[1].substr(0,3).toLowerCase() ];
             var day = parseInt(matches[2], 10)
 
             if (dateReason) {
@@ -281,11 +286,10 @@ function parseDate(s, baseline) {
             }   
             
             theDate.setHours(hour, minute, 0, 0);
+
             s = s.substr(matches[0].length);
             continue;
         }
-
-
     }
 
     if (conflicts)
@@ -334,11 +338,33 @@ function cleanupLabels() {
     var labels = getAllTicklerCmdLabels();
     for (var i=0; i<labels.length; i++) {
         var lname = labels[i].getName();
-        if (EXEMPT_LABELS.indexOf(lname) == -1 && labels[i].getThreads().length == 0) {
+        var protected_labels = constructProtectedLabels();
+        if (protected_labels.indexOf(lname) == -1 && labels[i].getThreads().length == 0) {
             Logger.log("deleted empty tickler-command label " + lname);
             GmailApp.deleteLabel(labels[i]);
         }
     }
+}
+
+function constructProtectedLabels() {
+    var protected_labels = PROTECTED_LABELS.map( function(x){
+        return TICKLER_LABEL + "/" + x;
+	});
+
+    var now  = new Date();
+    for (var i=0; i<PROTECTED_DAYS_COUNT; i++) {
+        var label_month = MONTH_NAMES[now.getMonth()];
+        var label_date = now.getDate() + i;
+        for (var j=0; j<PROTECTED_DAYS_TIMESTAMPS.length; j++) {
+          var cmd = label_month + label_date + " " + PROTECTED_DAYS_TIMESTAMPS[j];
+          // Only keep labels less than a year in the future, so we can remove labels from earlier in the current day
+          if ((parseDate(cmd, now).getTime() - now.getTime()) < (365 * 24 * 60 * 60 * 1000)) {
+            protected_labels.push(TICKLER_LABEL + "/" + cmd);
+          }
+        }
+    }
+
+    return protected_labels;
 }
 
 function errorThread(t, info) {
@@ -364,6 +390,5 @@ function errorThread(t, info) {
 
     if (ERROR_LABEL)
         GmailApp.getUserLabelByName(ERROR_LABEL).addToThread(t);
-
 }
 
