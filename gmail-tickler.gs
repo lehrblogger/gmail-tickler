@@ -351,20 +351,26 @@ function constructProtectedLabels() {
         return TICKLER_LABEL + "/" + x;
 	});
 
-    var now  = new Date();
+    var now = new Date();
+    var future = new Date()
     for (var i=0; i<PROTECTED_DAYS_COUNT; i++) {
-        var label_month = MONTH_NAMES[now.getMonth()];
-        var label_date = now.getDate() + i;
+        future.setTime( now.getTime() + daysToMilliseconds(i) );
+        var label_month = MONTH_NAMES[future.getMonth()];
+        var label_date = future.getDate();
         for (var j=0; j<PROTECTED_DAYS_TIMESTAMPS.length; j++) {
           var cmd = label_month + label_date + " " + PROTECTED_DAYS_TIMESTAMPS[j];
           // Only keep labels less than a year in the future, so we can remove labels from earlier in the current day
-          if ((parseDate(cmd, now).getTime() - now.getTime()) < (365 * 24 * 60 * 60 * 1000)) {
+          if ((parseDate(cmd, now).getTime() - now.getTime()) < daysToMilliseconds(365)) {
             protected_labels.push(TICKLER_LABEL + "/" + cmd);
           }
         }
     }
 
     return protected_labels;
+}
+
+function daysToMilliseconds(days) {
+    return (days * 24 * 60 * 60 * 1000);
 }
 
 function errorThread(t, info) {
