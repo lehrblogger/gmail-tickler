@@ -360,7 +360,7 @@ function constructProtectedLabels() {
         for (var j=0; j<PROTECTED_DAYS_TIMESTAMPS.length; j++) {
           var cmd = label_month + label_date + " " + PROTECTED_DAYS_TIMESTAMPS[j];
           // Only keep labels less than a year in the future, so we can remove labels from earlier in the current day
-          if ((parseDate(cmd, now).getTime() - now.getTime()) < daysToMilliseconds(365)) {
+          if (parseDate(cmd, now)["getTime"] && (parseDate(cmd, now).getTime() - now.getTime()) < daysToMilliseconds(365)) {
             protected_labels.push(TICKLER_LABEL + "/" + cmd);
           }
         }
